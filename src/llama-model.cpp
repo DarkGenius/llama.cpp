@@ -2197,7 +2197,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
 
                 // Track which layers use MLA vs KDA
                 std::vector<uint32_t> full_attn_layer_ids;
-                ml.get_key(LLM_KV_ATTENTION_FULL_ATTENTION_LAYERS, full_attn_layer_ids);
+                ml.get_arr(LLM_KV_ATTENTION_FULL_ATTENTION_LAYERS, full_attn_layer_ids);
 
                 // Initialize all layers as KDA (false), then mark MLA layers (true)
                 hparams.mla_layer_arr.fill(false);
@@ -6385,36 +6385,46 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 {n_head * n_embd_head_v, n_embd}, 0);
                         } else {
                             // KDA (Kimi Delta Attention) tensors
-                            // TODO: These require custom GGML operators for:
-                            // - Short convolutions (conv1d with kernel size 4)
-                            // - Linear attention with recurrent state
-                            // - Delta gating mechanism
-                            // For now, use placeholder Q/K/V tensors to allow compilation
+                            // Basic Q/K/V projections
                             layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i),
                                 {n_embd, n_head * n_embd_head_k_full}, 0);
                             layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i),
-                                {n_embd, n_head_kv * n_embd_head_k_full}, TENSOR_NOT_REQUIRED);
+                                {n_embd, n_head_kv * n_embd_head_k_full}, 0);
                             layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i),
-                                {n_embd, n_head_kv * n_embd_head_v}, TENSOR_NOT_REQUIRED);
+                                {n_embd, n_head_kv * n_embd_head_v}, 0);
                             layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i),
                                 {n_head * n_embd_head_v, n_embd}, 0);
 
-                            // KDA-specific tensors (marked as NOT_REQUIRED until operators are implemented)
-                            // Short convolution weights
-                            // layer.q_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_Q_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.k_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_K_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.v_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_V_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // Delta attention parameters
-                            // layer.a_log = create_tensor(tn(LLM_TENSOR_ATTN_A_LOG, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // Delta gating tensors
-                            // layer.attn_f_a_proj = create_tensor(tn(LLM_TENSOR_ATTN_F_A_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.attn_f_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_F_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.attn_dt_bias = create_tensor(tn(LLM_TENSOR_ATTN_DT_BIAS, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.attn_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // KDA-specific tensors
+                            // Note: Full KDA requires recurrent state management not yet implemented
+                            // Current implementation uses simplified linear attention
+
+                            // Short convolution weights (kernel_size=4, so cache=3)
+                            layer.wq_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_Q_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head * n_embd_head_k_full}, 0);
+                            layer.wk_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_K_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head_kv * n_embd_head_k_full}, 0);
+                            layer.wv_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_V_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head_kv * n_embd_head_v}, 0);
+
+                            // Delta gating tensors (LoRA-style projections)
+                            const int64_t kda_lora_rank = 256;  // Standard LoRA rank for Kimi
+                            layer.attn_f_a = create_tensor(tn(LLM_TENSOR_ATTN_F_A_PROJ, "weight", i),
+                                {n_embd, kda_lora_rank}, 0);
+                            layer.attn_f_b = create_tensor(tn(LLM_TENSOR_ATTN_F_B_PROJ, "weight", i),
+                                {kda_lora_rank, n_head}, 0);
+                            layer.attn_dt_b = create_tensor(tn(LLM_TENSOR_ATTN_DT_BIAS, "weight", i),
+                                {n_head}, 0);
+
                             // Output gating tensors
-                            // layer.attn_g_a_proj = create_tensor(tn(LLM_TENSOR_ATTN_G_A_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.attn_g_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_G_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
-                            // layer.attn_o_norm = create_tensor(tn(LLM_TENSOR_ATTN_O_NORM, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            layer.attn_g_a = create_tensor(tn(LLM_TENSOR_ATTN_G_A_PROJ, "weight", i),
+                                {n_embd, kda_lora_rank}, 0);
+                            layer.attn_g_b = create_tensor(tn(LLM_TENSOR_ATTN_G_B_PROJ, "weight", i),
+                                {kda_lora_rank, n_head * n_embd_head_v}, 0);
+
+                            // Output normalization
+                            layer.attn_o_norm = create_tensor(tn(LLM_TENSOR_ATTN_O_NORM, "weight", i),
+                                {n_head * n_embd_head_v}, 0);
                         }
 
                         // MoE FFN (all layers use MoE)
