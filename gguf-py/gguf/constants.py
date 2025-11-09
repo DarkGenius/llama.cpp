@@ -581,7 +581,6 @@ class MODEL_TENSOR(IntEnum):
     ATTN_K_B             = auto()
     ATTN_V_B             = auto()
     ATTN_Q_A_NORM        = auto()
-    ATTN_KV_A_NORM       = auto()
     FFN_SUB_NORM         = auto()
     ATTN_SUB_NORM        = auto()
     DEC_ATTN_NORM        = auto()
