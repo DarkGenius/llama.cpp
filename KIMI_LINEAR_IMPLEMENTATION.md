@@ -48,12 +48,12 @@ python convert_hf_to_gguf.py /path/to/Kimi-Linear-48B-A3B-Instruct --outfile kim
    - Added "kimi_linear" to LLM_ARCH_NAMES map
    - Added KV key name mappings
 
-## 🚧 TODO: C++ Inference Implementation
+## ✅ Completed: C++ Inference Implementation (Partial)
 
-The following components need to be implemented for full inference support:
+### What's Been Implemented
 
-### 1. Tensor Enum Definitions (src/llama-arch.cpp)
-Define `LLM_TENSOR_*` enums for Kimi-specific tensors:
+#### 1. ✅ Tensor Enum Definitions (src/llama-arch.cpp)
+Defined `LLM_TENSOR_*` enums for all Kimi-specific tensors:
 
 ```cpp
 // Around line 250-300, add to enum llm_tensor:
@@ -327,17 +327,60 @@ This is a **very large implementation task** that requires:
 ## Current Status
 
 ✅ **Model Conversion**: Fully implemented and tested
-✅ **C++ Foundation**: Architecture enum and KV keys added
-⏳ **Inference Implementation**: Not started (requires significant C++ development)
+✅ **C++ Foundation**: Architecture enum, KV keys, and tensor definitions added
+✅ **Model Structure**: Hyperparameters and tensor creation implemented
+✅ **MLA Inference**: Fully implemented (compression, decompression, attention)
+✅ **MoE FFN**: Fully implemented (routed + shared experts with sigmoid gating)
+⏳ **KDA Inference**: Placeholder only (requires custom GGML operators)
+
+### Implementation Details
+
+**Completed (Commits 27a5fb4, 6aef12a):**
+1. ✅ Tensor enum definitions (16 new tensors)
+2. ✅ Tensor name mappings (33 mappings)
+3. ✅ Model hyperparameters (llama-hparams.h):
+   - MLA head dimensions (qk_nope, qk_rope, v_head_dim)
+   - MoE parameters (intermediate size, routed scaling factor)
+   - MLA layer tracking array
+4. ✅ Parameter loading (llama-model.cpp):
+   - Loads all Kimi-specific parameters from GGUF
+   - Populates mla_layer_arr for MLA/KDA distinction
+5. ✅ Tensor creation (llama-model.cpp):
+   - MLA tensors (wq, wkv_a_mqa, attn_kv_a_norm, wkv_b, wo)
+   - MoE tensors (gate_inp, gate_inp_bias, up/gate/down_exps, shared expert)
+   - KDA placeholder tensors (wq, wk, wv, wo)
+6. ✅ Graph builder (src/models/kimi-linear.cpp):
+   - Full MLA attention implementation (KV compression/decompression)
+   - MoE FFN with sigmoid router and routed scaling
+   - Shared expert processing
+   - Residual connections and normalization
+7. ✅ Model type LLM_TYPE_48B
+8. ✅ Compilation successful
+
+**Not Implemented (KDA Layers):**
+- Short convolution (conv1d with kernel size 4)
+- Linear attention with recurrent state management
+- Delta gating mechanism
+- KDA-specific tensors creation
+- Currently uses placeholder that prints warning
 
 ## Next Steps
 
-1. Define tensor enums and name mappings
-2. Implement model parameter loading
-3. Create KV cache structures
-4. Implement GGML operators
-5. Build computation graph
-6. Test with converted model
+### For Full KDA Support:
+1. Implement GGML operators:
+   - `ggml_conv_1d_kimi` - Short convolution with state management
+   - `ggml_kda_linear_attn` - Linear attention with recurrent updates
+   - `ggml_delta_gate` - Delta gating for temporal modeling
+2. Create KV cache for recurrent states
+3. Add KDA tensor creation in llama-model.cpp
+4. Implement KDA graph builder in kimi-linear.cpp
+5. Add CPU/CUDA/Metal kernels for performance
+
+### For Testing:
+1. Convert Kimi-Linear model with Python converter
+2. Test MLA layers inference (should work now)
+3. Compare MLA outputs with PyTorch reference
+4. Measure performance and memory usage
 
 ## References
 
