@@ -6342,6 +6342,107 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
                 } break;
+            case LLM_ARCH_KIMI_LINEAR:
+                {
+                    // Kimi-Linear head dimensions
+                    const int64_t n_embd_head_qk_rope = hparams.n_qk_rope_head_dim;
+                    const int64_t n_embd_head_qk_nope = hparams.n_qk_nope_head_dim;
+                    const int64_t n_embd_head_v       = hparams.n_v_head_dim;
+                    const int64_t n_embd_head_k_full  = n_embd_head_qk_rope + n_embd_head_qk_nope;
+
+                    const int64_t kv_lora_rank = hparams.n_lora_kv;
+                    const int64_t n_ff_exp     = hparams.n_moe_intermediate_size;
+
+                    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+
+                    // output
+                    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+                    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, 0);
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        auto & layer = layers[i];
+
+                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+
+                        // Check if this layer uses MLA (true) or KDA (false)
+                        bool is_mla = hparams.mla_layer_arr[i];
+
+                        if (is_mla) {
+                            // MLA (Multi-head Latent Attention) tensors - similar to DeepSeek2
+                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i),
+                                {n_embd, n_head * n_embd_head_k_full}, 0);
+
+                            layer.wkv_a_mqa = create_tensor(tn(LLM_TENSOR_ATTN_KV_A_PROJ_MQA, "weight", i),
+                                {n_embd, kv_lora_rank + n_embd_head_qk_rope}, 0);
+
+                            layer.attn_kv_a_norm = create_tensor(tn(LLM_TENSOR_ATTN_KV_A_NORM, "weight", i),
+                                {kv_lora_rank}, 0);
+
+                            layer.wkv_b = create_tensor(tn(LLM_TENSOR_ATTN_KV_B_PROJ, "weight", i),
+                                {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)}, 0);
+
+                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i),
+                                {n_head * n_embd_head_v, n_embd}, 0);
+                        } else {
+                            // KDA (Kimi Delta Attention) tensors
+                            // TODO: These require custom GGML operators for:
+                            // - Short convolutions (conv1d with kernel size 4)
+                            // - Linear attention with recurrent state
+                            // - Delta gating mechanism
+                            // For now, use placeholder Q/K/V tensors to allow compilation
+                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i),
+                                {n_embd, n_head * n_embd_head_k_full}, 0);
+                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i),
+                                {n_embd, n_head_kv * n_embd_head_k_full}, TENSOR_NOT_REQUIRED);
+                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i),
+                                {n_embd, n_head_kv * n_embd_head_v}, TENSOR_NOT_REQUIRED);
+                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i),
+                                {n_head * n_embd_head_v, n_embd}, 0);
+
+                            // KDA-specific tensors (marked as NOT_REQUIRED until operators are implemented)
+                            // Short convolution weights
+                            // layer.q_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_Q_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.k_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_K_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.v_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_V_CONV1D, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // Delta attention parameters
+                            // layer.a_log = create_tensor(tn(LLM_TENSOR_ATTN_A_LOG, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // Delta gating tensors
+                            // layer.attn_f_a_proj = create_tensor(tn(LLM_TENSOR_ATTN_F_A_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.attn_f_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_F_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.attn_dt_bias = create_tensor(tn(LLM_TENSOR_ATTN_DT_BIAS, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.attn_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // Output gating tensors
+                            // layer.attn_g_a_proj = create_tensor(tn(LLM_TENSOR_ATTN_G_A_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.attn_g_b_proj = create_tensor(tn(LLM_TENSOR_ATTN_G_B_PROJ, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                            // layer.attn_o_norm = create_tensor(tn(LLM_TENSOR_ATTN_O_NORM, "weight", i), {...}, TENSOR_NOT_REQUIRED);
+                        }
+
+                        // MoE FFN (all layers use MoE)
+                        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+
+                        layer.ffn_gate_inp = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP, "weight", i),
+                            {n_embd, n_expert}, 0);
+                        layer.ffn_gate_inp_b = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP_BIAS, "weight", i),
+                            {n_expert}, 0);
+
+                        layer.ffn_up_exps = create_tensor(tn(LLM_TENSOR_FFN_UP_EXP, "weight", i),
+                            {n_embd, n_ff_exp, n_expert}, 0);
+                        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i),
+                            {n_embd, n_ff_exp, n_expert}, 0);
+                        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i),
+                            {n_ff_exp, n_embd, n_expert}, 0);
+
+                        // Shared expert (1 shared expert in Kimi-Linear)
+                        if (hparams.n_expert_shared > 0) {
+                            layer.ffn_up_shexp = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i),
+                                {n_embd, n_ff_exp}, 0);
+                            layer.ffn_gate_shexp = create_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i),
+                                {n_embd, n_ff_exp}, 0);
+                            layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i),
+                                {n_ff_exp, n_embd}, 0);
+                        }
+                    }
+                } break;
             default:
                 throw std::runtime_error("unknown architecture");
         }
@@ -7165,6 +7266,10 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
         case LLM_ARCH_DEEPSEEK2:
             {
                 llm = std::make_unique<llm_build_deepseek2>(*this, params);
+            } break;
+        case LLM_ARCH_KIMI_LINEAR:
+            {
+                llm = std::make_unique<llm_build_kimi_linear>(*this, params);
             } break;
         case LLM_ARCH_CHATGLM:
             {
