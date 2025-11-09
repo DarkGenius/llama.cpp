@@ -9755,6 +9755,147 @@ class ApertusModel(LlamaModel):
         return super().modify_tensors(data_torch, name, bid)
 
 
+@ModelBase.register("KimiForCausalLM")
+class KimiLinearModel(TextModel):
+    model_arch = gguf.MODEL_ARCH.KIMI_LINEAR
+
+    def set_gguf_parameters(self):
+        super().set_gguf_parameters()
+
+        # MLA (Multi-head Latent Attention) parameters
+        if (kv_lora_rank := self.hparams.get("kv_lora_rank")) is not None:
+            self.gguf_writer.add_kv_lora_rank(kv_lora_rank)
+            logger.info(f"gguf: kv_lora_rank = {kv_lora_rank}")
+
+        if (qk_nope_head_dim := self.hparams.get("qk_nope_head_dim")) is not None:
+            self.gguf_writer.add_qk_nope_head_dim(qk_nope_head_dim)
+            logger.info(f"gguf: qk_nope_head_dim = {qk_nope_head_dim}")
+
+        if (qk_rope_head_dim := self.hparams.get("qk_rope_head_dim")) is not None:
+            self.gguf_writer.add_qk_rope_head_dim(qk_rope_head_dim)
+            logger.info(f"gguf: qk_rope_head_dim = {qk_rope_head_dim}")
+
+        if (v_head_dim := self.hparams.get("v_head_dim")) is not None:
+            self.gguf_writer.add_v_head_dim(v_head_dim)
+            logger.info(f"gguf: v_head_dim = {v_head_dim}")
+
+        if (mla_nope_enabled := self.hparams.get("mla_nope_enabled")) is not None:
+            self.gguf_writer.add_mla_nope_enabled(mla_nope_enabled)
+            logger.info(f"gguf: mla_nope_enabled = {mla_nope_enabled}")
+
+        # KDA (Kimi Delta Attention) parameters
+        if (short_conv_kernel_size := self.hparams.get("short_conv_kernel_size")) is not None:
+            self.gguf_writer.add_short_conv_kernel_size(short_conv_kernel_size)
+            logger.info(f"gguf: short_conv_kernel_size = {short_conv_kernel_size}")
+
+        if (full_attention_layers := self.hparams.get("full_attention_layers")) is not None:
+            self.gguf_writer.add_full_attention_layers(full_attention_layers)
+            logger.info(f"gguf: full_attention_layers = {full_attention_layers}")
+
+        # MoE parameters
+        if (num_experts := self.hparams.get("num_experts")) is not None:
+            self.gguf_writer.add_expert_count(num_experts)
+            logger.info(f"gguf: expert_count = {num_experts}")
+
+        if (num_experts_per_tok := self.hparams.get("num_experts_per_tok")) is not None:
+            self.gguf_writer.add_expert_used_count(num_experts_per_tok)
+            logger.info(f"gguf: expert_used_count = {num_experts_per_tok}")
+
+        if (num_shared_experts := self.hparams.get("num_shared_experts")) is not None:
+            self.gguf_writer.add_expert_shared_count(num_shared_experts)
+            logger.info(f"gguf: expert_shared_count = {num_shared_experts}")
+
+        if (expert_group_count := self.hparams.get("expert_group_count")) is not None:
+            self.gguf_writer.add_expert_group_count(expert_group_count)
+            logger.info(f"gguf: expert_group_count = {expert_group_count}")
+
+        if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
+            self.gguf_writer.add_moe_intermediate_size(moe_intermediate_size)
+            logger.info(f"gguf: moe_intermediate_size = {moe_intermediate_size}")
+
+        if (routed_scaling_factor := self.hparams.get("routed_scaling_factor")) is not None:
+            self.gguf_writer.add_routed_scaling_factor(routed_scaling_factor)
+            logger.info(f"gguf: routed_scaling_factor = {routed_scaling_factor}")
+
+        # Router activation (sigmoid for Kimi-Linear)
+        router_activation = self.hparams.get("router_activation", "sigmoid")
+        if router_activation == "sigmoid":
+            self.gguf_writer.add_expert_gating_func(gguf.ExpertGatingFuncType.SIGMOID)
+            logger.info(f"gguf: expert_gating_func = sigmoid")
+
+    _experts: list[dict[str, torch.Tensor]] | None = None
+
+    def modify_tensors(self, data_torch: torch.Tensor, name: str, bid: int | None) -> Iterable[tuple[str, torch.Tensor]]:
+        # Handle MoE expert tensors
+        if name.find("block_sparse_moe.experts") != -1 and bid is not None:
+            n_experts = self.hparams["num_experts"]
+
+            if self._experts is None:
+                self._experts = [{} for _ in range(self.block_count)]
+
+            self._experts[bid][name] = data_torch
+
+            # Check if we have all expert tensors for this layer (w1, w2, w3 for each expert)
+            if len(self._experts[bid]) >= n_experts * 3:
+                tensors: list[tuple[str, torch.Tensor]] = []
+
+                # Merge experts into single tensors
+                for w_name in ["w1", "w2", "w3"]:
+                    datas: list[torch.Tensor] = []
+
+                    for xid in range(n_experts):
+                        ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{w_name}.weight"
+                        if ename in self._experts[bid]:
+                            datas.append(self._experts[bid][ename])
+                            del self._experts[bid][ename]
+
+                    if len(datas) > 0:
+                        data_torch_merged = torch.stack(datas, dim=0)
+
+                        # Map to GGUF names
+                        if w_name == "w1":
+                            merged_name = f"model.layers.{bid}.block_sparse_moe.experts.gate_proj.weight"
+                        elif w_name == "w2":
+                            merged_name = f"model.layers.{bid}.block_sparse_moe.experts.down_proj.weight"
+                        elif w_name == "w3":
+                            merged_name = f"model.layers.{bid}.block_sparse_moe.experts.up_proj.weight"
+
+                        new_name = self.map_tensor_name(merged_name)
+                        tensors.append((new_name, data_torch_merged))
+
+                return tensors
+            else:
+                return []
+
+        # Handle shared experts
+        if name.find("shared_experts") != -1:
+            # Shared experts are processed normally
+            return [(self.map_tensor_name(name), data_torch)]
+
+        # Handle gate bias (e_score_correction_bias)
+        if name.endswith("block_sparse_moe.gate.e_score_correction_bias"):
+            # Map to FFN_GATE_INP_BIAS
+            new_name = self.map_tensor_name(name.replace("e_score_correction_bias", "bias"))
+            return [(new_name, data_torch)]
+
+        # Handle convolution weights for KDA layers
+        if "conv1d" in name:
+            # Conv1D layers are handled normally
+            return [(self.map_tensor_name(name), data_torch)]
+
+        # Default processing
+        return [(self.map_tensor_name(name), data_torch)]
+
+    def prepare_tensors(self):
+        super().prepare_tensors()
+
+        if self._experts is not None:
+            # Check for any unprocessed expert tensors
+            experts = [k for d in self._experts for k in d.keys()]
+            if len(experts) > 0:
+                raise ValueError(f"Unprocessed expert tensors: {experts}")
+
+
 class MistralModel(LlamaModel):
     model_arch = gguf.MODEL_ARCH.LLAMA
     model_name = "Mistral"

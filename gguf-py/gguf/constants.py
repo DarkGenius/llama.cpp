@@ -110,6 +110,8 @@ class Keys:
         EXPERT_GROUP_SCALE                = "{arch}.expert_group_scale"
         EXPERTS_PER_GROUP                 = "{arch}.experts_per_group"
         MOE_EVERY_N_LAYERS                = "{arch}.moe_every_n_layers"
+        MOE_INTERMEDIATE_SIZE             = "{arch}.moe_intermediate_size"
+        ROUTED_SCALING_FACTOR             = "{arch}.routed_scaling_factor"
         NEXTN_PREDICT_LAYERS              = "{arch}.nextn_predict_layers"
         NUM_DEEPSTACK_LAYERS              = "{arch}.n_deepstack_layers"
         POOLING_TYPE                      = "{arch}.pooling_type"
@@ -161,6 +163,12 @@ class Keys:
         VALUE_LENGTH_MLA             = "{arch}.attention.value_length_mla"
         SHARED_KV_LAYERS             = "{arch}.attention.shared_kv_layers"
         SLIDING_WINDOW_PATTERN       = "{arch}.attention.sliding_window_pattern"
+        QK_NOPE_HEAD_DIM             = "{arch}.attention.qk_nope_head_dim"
+        QK_ROPE_HEAD_DIM             = "{arch}.attention.qk_rope_head_dim"
+        V_HEAD_DIM                   = "{arch}.attention.v_head_dim"
+        MLA_NOPE_ENABLED             = "{arch}.attention.mla_nope_enabled"
+        SHORT_CONV_KERNEL_SIZE       = "{arch}.attention.short_conv_kernel_size"
+        FULL_ATTENTION_LAYERS        = "{arch}.attention.full_attention_layers"
 
     class Rope:
         DIMENSION_COUNT          = "{arch}.rope.dimension_count"
@@ -417,6 +425,7 @@ class MODEL_ARCH(IntEnum):
     GPT_OSS          = auto()
     LFM2             = auto()
     LFM2MOE          = auto()
+    KIMI_LINEAR      = auto()
     DREAM            = auto()
     SMALLTHINKER     = auto()
     LLADA            = auto()
@@ -486,6 +495,21 @@ class MODEL_TENSOR(IntEnum):
     FFN_EXP_PROBS_B      = auto()
     ATTN_Q_NORM          = auto()
     ATTN_K_NORM          = auto()
+    ATTN_Q_CONV1D        = auto() # kimi_linear KDA
+    ATTN_K_CONV1D        = auto() # kimi_linear KDA
+    ATTN_V_CONV1D        = auto() # kimi_linear KDA
+    ATTN_A_LOG           = auto() # kimi_linear KDA
+    ATTN_F_A_PROJ        = auto() # kimi_linear KDA
+    ATTN_F_B_PROJ        = auto() # kimi_linear KDA
+    ATTN_DT_BIAS         = auto() # kimi_linear KDA
+    ATTN_B_PROJ          = auto() # kimi_linear KDA
+    ATTN_G_A_PROJ        = auto() # kimi_linear KDA
+    ATTN_G_B_PROJ        = auto() # kimi_linear KDA
+    ATTN_O_NORM          = auto() # kimi_linear KDA
+    ATTN_KV_A_PROJ_MQA   = auto() # kimi_linear MLA
+    ATTN_KV_A_NORM       = auto() # kimi_linear MLA
+    ATTN_KV_B_PROJ       = auto() # kimi_linear MLA
+    FFN_GATE_INP_BIAS    = auto() # kimi_linear MoE router bias
     LAYER_OUT_NORM       = auto()
     PER_LAYER_TOKEN_EMBD = auto() # gemma3n
     PER_LAYER_MODEL_PROJ = auto() # gemma3n
@@ -785,6 +809,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.GPT_OSS:          "gpt-oss",
     MODEL_ARCH.LFM2:             "lfm2",
     MODEL_ARCH.LFM2MOE:          "lfm2moe",
+    MODEL_ARCH.KIMI_LINEAR:      "kimi_linear",
     MODEL_ARCH.DREAM:            "dream",
     MODEL_ARCH.SMALLTHINKER:     "smallthinker",
     MODEL_ARCH.LLADA:            "llada",
@@ -2851,6 +2876,44 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.FFN_DOWN_EXP,
         MODEL_TENSOR.FFN_UP_EXP,
         MODEL_TENSOR.FFN_EXP_PROBS_B,
+    ],
+    MODEL_ARCH.KIMI_LINEAR: [
+        MODEL_TENSOR.TOKEN_EMBD,
+        MODEL_TENSOR.OUTPUT_NORM,
+        MODEL_TENSOR.OUTPUT,
+        MODEL_TENSOR.ATTN_NORM,
+        # MLA (Multi-head Latent Attention) layers
+        MODEL_TENSOR.ATTN_Q,
+        MODEL_TENSOR.ATTN_KV_A_PROJ_MQA,
+        MODEL_TENSOR.ATTN_KV_A_NORM,
+        MODEL_TENSOR.ATTN_KV_B_PROJ,
+        # KDA (Kimi Delta Attention) layers
+        MODEL_TENSOR.ATTN_K,
+        MODEL_TENSOR.ATTN_V,
+        MODEL_TENSOR.ATTN_Q_CONV1D,
+        MODEL_TENSOR.ATTN_K_CONV1D,
+        MODEL_TENSOR.ATTN_V_CONV1D,
+        MODEL_TENSOR.ATTN_A_LOG,
+        MODEL_TENSOR.ATTN_F_A_PROJ,
+        MODEL_TENSOR.ATTN_F_B_PROJ,
+        MODEL_TENSOR.ATTN_DT_BIAS,
+        MODEL_TENSOR.ATTN_B_PROJ,
+        MODEL_TENSOR.ATTN_G_A_PROJ,
+        MODEL_TENSOR.ATTN_G_B_PROJ,
+        MODEL_TENSOR.ATTN_O_NORM,
+        # Common attention
+        MODEL_TENSOR.ATTN_OUT,
+        # FFN
+        MODEL_TENSOR.FFN_NORM,
+        # MoE
+        MODEL_TENSOR.FFN_GATE_INP,
+        MODEL_TENSOR.FFN_GATE_INP_BIAS,
+        MODEL_TENSOR.FFN_GATE_EXP,
+        MODEL_TENSOR.FFN_DOWN_EXP,
+        MODEL_TENSOR.FFN_UP_EXP,
+        MODEL_TENSOR.FFN_GATE_SHEXP,
+        MODEL_TENSOR.FFN_DOWN_SHEXP,
+        MODEL_TENSOR.FFN_UP_SHEXP,
     ],
     MODEL_ARCH.SMALLTHINKER: [
         MODEL_TENSOR.TOKEN_EMBD,
