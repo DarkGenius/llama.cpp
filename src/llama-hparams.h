@@ -54,6 +54,12 @@ struct llama_hparams {
     uint32_t n_embd_head_k_mla = 0;
     uint32_t n_embd_head_v_mla = 0;
 
+    // for Kimi-Linear MLA (head dimension splits)
+    uint32_t n_qk_nope_head_dim = 0;  // non-RoPE portion of Q/K
+    uint32_t n_qk_rope_head_dim = 0;  // RoPE portion of Q/K
+    uint32_t n_v_head_dim       = 0;  // value head dimension
+    bool     mla_nope_enabled   = false;
+
     // for WavTokenizer
     struct llama_hparams_posnet   posnet;
     struct llama_hparams_convnext convnext;
@@ -82,6 +88,10 @@ struct llama_hparams {
     uint32_t expert_gating_func   = LLAMA_EXPERT_GATING_FUNC_TYPE_NONE;
     uint32_t moe_every_n_layers   = 0;
     uint32_t nextn_predict_layers = 0;
+
+    // for Kimi-Linear MoE
+    uint32_t n_moe_intermediate_size = 0;  // intermediate size for MoE experts
+    float    f_routed_scaling_factor = 0.0f;  // routed expert scaling factor
 
     float f_norm_eps;
     float f_norm_rms_eps;
@@ -135,6 +145,9 @@ struct llama_hparams {
 
     // for hybrid state space models
     std::array<bool, LLAMA_MAX_LAYERS> recurrent_layer_arr;
+
+    // for Kimi-Linear (tracks which layers use MLA vs KDA)
+    std::array<bool, LLAMA_MAX_LAYERS> mla_layer_arr;
 
     bool ssm_dt_b_c_rms = false;
 

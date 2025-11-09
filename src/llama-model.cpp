@@ -91,6 +91,7 @@ const char * llm_type_name(llm_type type) {
         case LLM_TYPE_35B:           return "35B";
         case LLM_TYPE_36B:           return "36B";
         case LLM_TYPE_40B:           return "40B";
+        case LLM_TYPE_48B:           return "48B";
         case LLM_TYPE_65B:           return "65B";
         case LLM_TYPE_70B:           return "70B";
         case LLM_TYPE_120B:          return "120B";
@@ -2177,6 +2178,45 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 switch (hparams.n_layer) {
                     case 26: type = LLM_TYPE_1B; break; // openPangu-Embedded-1B-V1.1
                     case 34: type = LLM_TYPE_7B; break; // openPangu-Embedded-7B-V1.1
+                    default: type = LLM_TYPE_UNKNOWN;
+                }
+            } break;
+        case LLM_ARCH_KIMI_LINEAR:
+            {
+                // MLA head dimension parameters
+                ml.get_key(LLM_KV_ATTENTION_QK_NOPE_HEAD_DIM,    hparams.n_qk_nope_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_QK_ROPE_HEAD_DIM,    hparams.n_qk_rope_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_V_HEAD_DIM,          hparams.n_v_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_MLA_NOPE_ENABLED,    hparams.mla_nope_enabled, false);
+
+                // MLA compression
+                ml.get_key(LLM_KV_ATTENTION_KV_LORA_RANK, hparams.n_lora_kv);
+
+                // KDA short convolution
+                ml.get_key(LLM_KV_ATTENTION_SHORT_CONV_KERNEL_SIZE, hparams.n_shortconv_l_cache);
+
+                // Track which layers use MLA vs KDA
+                std::vector<uint32_t> full_attn_layer_ids;
+                ml.get_key(LLM_KV_ATTENTION_FULL_ATTENTION_LAYERS, full_attn_layer_ids);
+
+                // Initialize all layers as KDA (false), then mark MLA layers (true)
+                hparams.mla_layer_arr.fill(false);
+                for (uint32_t layer_id : full_attn_layer_ids) {
+                    if (layer_id < hparams.n_layer) {
+                        hparams.mla_layer_arr[layer_id] = true;
+                    }
+                }
+
+                // MoE parameters
+                ml.get_key(LLM_KV_MOE_INTERMEDIATE_SIZE,    hparams.n_moe_intermediate_size, false);
+                ml.get_key(LLM_KV_ROUTED_SCALING_FACTOR,    hparams.f_routed_scaling_factor, false);
+                ml.get_key(LLM_KV_EXPERT_GATING_FUNC,       hparams.expert_gating_func, false);
+
+                // Norm parameters
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+
+                switch (hparams.n_layer) {
+                    case 27: type = LLM_TYPE_48B; break; // Kimi-Linear-48B-A3B-Instruct
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
@@ -7459,6 +7499,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_ARCTIC:
         case LLM_ARCH_DEEPSEEK:
         case LLM_ARCH_DEEPSEEK2:
+        case LLM_ARCH_KIMI_LINEAR:
         case LLM_ARCH_PLM:
         case LLM_ARCH_CHATGLM:
         case LLM_ARCH_GLM4:
