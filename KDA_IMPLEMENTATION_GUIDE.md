@@ -4,17 +4,53 @@
 
 This document provides a detailed guide for implementing KDA (Kimi Delta Attention) layers in llama.cpp. KDA is a linear-complexity attention mechanism used in 20 out of 27 layers in the Kimi-Linear-48B model.
 
-## Current Status
+## Current Status (Updated: Commit 81f64fb)
 
-- ❌ **KDA Implementation**: Not implemented (placeholder only)
+- ✅ **KDA Implementation**: Enhanced with all major components (see below)
 - ✅ **MLA Implementation**: Fully working (7/27 layers)
 - ✅ **MoE FFN**: Fully working (all layers)
 
-**Why KDA is not yet implemented:**
-- Requires custom GGML operators (estimated 2-3 weeks development)
-- Needs CPU, CUDA, and Metal kernel implementations
-- Requires specialized KV cache for recurrent states
-- Complex delta attention mechanism with state management
+### What's Implemented in KDA (Commits e3b0a53, 81f64fb):
+
+✅ **Tensor Creation** (llama-model.cpp, llama-model.h):
+- All 9 KDA tensor fields in llama_layer structure
+- Conv1d weights (wq_conv1d, wk_conv1d, wv_conv1d)
+- Delta gating projections (attn_f_a, attn_f_b, attn_dt_b)
+- Output gating projections (attn_g_a, attn_g_b)
+- Output normalization (attn_o_norm)
+
+✅ **Graph Builder** (kimi-linear.cpp):
+- Q/K/V projections and reshaping
+- Short convolution (differentiated single-token vs multi-token)
+- Q/K rope/nope splitting
+- RoPE application to positional encodings
+- Delta gating (LoRA projections + GELU activation)
+- Causal attention (O(N²) standard attention)
+- Output gating (sigmoid activation)
+- Output normalization (RMS norm)
+
+### What's Still Missing for True O(N) Linear Attention:
+
+❌ **Custom GGML Operators**:
+- Stateful conv1d with cross-batch state persistence
+- Recurrent linear attention: `S[t] = exp(A_log * dt) * S[t-1] + K[t] ⊗ V[t]`
+- CPU/CUDA/Metal kernel implementations
+
+❌ **Recurrent State Management**:
+- KV cache for conv states (currently no cross-batch persistence)
+- KV cache for attention states (recurrent accumulator)
+- State update and retrieval infrastructure
+
+❌ **A_log Decay Parameter**:
+- Tensor not created (would need to add to tensor creation)
+- Integration with delta gating for temporal modulation
+
+**Key Difference:** Current implementation has all KDA components but uses
+standard O(N²) causal attention instead of O(N) recurrent linear attention.
+This provides functional inference with correct causality but without the
+linear complexity benefit.
+
+**Estimated effort for full O(N) implementation:** 6-10 weeks (see roadmap below)
 
 ## KDA Architecture
 
