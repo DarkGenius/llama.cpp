@@ -2233,6 +2233,46 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
         }
     },
     {
+        LLM_ARCH_KIMI_LINEAR,
+        {
+            { LLM_TENSOR_TOKEN_EMBD,            "token_embd" },
+            { LLM_TENSOR_OUTPUT_NORM,           "output_norm" },
+            { LLM_TENSOR_OUTPUT,                "output" },
+            { LLM_TENSOR_ATTN_NORM,             "blk.%d.attn_norm" },
+            // Common attention tensors
+            { LLM_TENSOR_ATTN_Q,                "blk.%d.attn_q" },
+            { LLM_TENSOR_ATTN_OUT,              "blk.%d.attn_output" },
+            // MLA (Multi-head Latent Attention) tensors
+            { LLM_TENSOR_ATTN_KV_A_PROJ_MQA,    "blk.%d.attn_kv_a_proj_mqa" },
+            { LLM_TENSOR_ATTN_KV_A_NORM,        "blk.%d.attn_kv_a_norm" },
+            { LLM_TENSOR_ATTN_KV_B_PROJ,        "blk.%d.attn_kv_b_proj" },
+            // KDA (Kimi Delta Attention) tensors
+            { LLM_TENSOR_ATTN_K,                "blk.%d.attn_k" },
+            { LLM_TENSOR_ATTN_V,                "blk.%d.attn_v" },
+            { LLM_TENSOR_ATTN_Q_CONV1D,         "blk.%d.attn_q_conv1d" },
+            { LLM_TENSOR_ATTN_K_CONV1D,         "blk.%d.attn_k_conv1d" },
+            { LLM_TENSOR_ATTN_V_CONV1D,         "blk.%d.attn_v_conv1d" },
+            { LLM_TENSOR_ATTN_A_LOG,            "blk.%d.attn_a_log" },
+            { LLM_TENSOR_ATTN_F_A_PROJ,         "blk.%d.attn_f_a_proj" },
+            { LLM_TENSOR_ATTN_F_B_PROJ,         "blk.%d.attn_f_b_proj" },
+            { LLM_TENSOR_ATTN_DT_BIAS,          "blk.%d.attn_dt_bias" },
+            { LLM_TENSOR_ATTN_B_PROJ,           "blk.%d.attn_b_proj" },
+            { LLM_TENSOR_ATTN_G_A_PROJ,         "blk.%d.attn_g_a_proj" },
+            { LLM_TENSOR_ATTN_G_B_PROJ,         "blk.%d.attn_g_b_proj" },
+            { LLM_TENSOR_ATTN_O_NORM,           "blk.%d.attn_o_norm" },
+            // FFN/MoE tensors
+            { LLM_TENSOR_FFN_NORM,              "blk.%d.ffn_norm" },
+            { LLM_TENSOR_FFN_GATE_INP,          "blk.%d.ffn_gate_inp" },
+            { LLM_TENSOR_FFN_GATE_INP_BIAS,     "blk.%d.ffn_gate_inp_bias" },
+            { LLM_TENSOR_FFN_GATE_EXPS,         "blk.%d.ffn_gate_exps" },
+            { LLM_TENSOR_FFN_DOWN_EXPS,         "blk.%d.ffn_down_exps" },
+            { LLM_TENSOR_FFN_UP_EXPS,           "blk.%d.ffn_up_exps" },
+            { LLM_TENSOR_FFN_GATE_SHEXP,        "blk.%d.ffn_gate_shexp" },
+            { LLM_TENSOR_FFN_DOWN_SHEXP,        "blk.%d.ffn_down_shexp" },
+            { LLM_TENSOR_FFN_UP_SHEXP,          "blk.%d.ffn_up_shexp" },
+        }
+    },
+    {
         LLM_ARCH_SMALLTHINKER,
         {
             { LLM_TENSOR_TOKEN_EMBD,         "token_embd" },
