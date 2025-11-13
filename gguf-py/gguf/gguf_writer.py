@@ -779,6 +779,12 @@ class GGUFWriter:
     def add_moe_every_n_layers(self, value: int) -> None:
         self.add_uint32(Keys.LLM.MOE_EVERY_N_LAYERS.format(arch=self.arch), value)
 
+    def add_moe_intermediate_size(self, value: int) -> None:
+        self.add_uint32(Keys.LLM.MOE_INTERMEDIATE_SIZE.format(arch=self.arch), value)
+
+    def add_routed_scaling_factor(self, value: float) -> None:
+        self.add_float32(Keys.LLM.ROUTED_SCALING_FACTOR.format(arch=self.arch), value)
+
     def add_nextn_predict_layers(self, count: int) -> None:
         self.add_uint32(Keys.LLM.NEXTN_PREDICT_LAYERS.format(arch=self.arch), count)
 
@@ -856,6 +862,24 @@ class GGUFWriter:
 
     def add_attn_temperature_length(self, value: int) -> None:
         self.add_uint32(Keys.Attention.TEMPERATURE_LENGTH.format(arch=self.arch), value)
+
+    def add_qk_nope_head_dim(self, value: int) -> None:
+        self.add_uint32(Keys.Attention.QK_NOPE_HEAD_DIM.format(arch=self.arch), value)
+
+    def add_qk_rope_head_dim(self, value: int) -> None:
+        self.add_uint32(Keys.Attention.QK_ROPE_HEAD_DIM.format(arch=self.arch), value)
+
+    def add_v_head_dim(self, value: int) -> None:
+        self.add_uint32(Keys.Attention.V_HEAD_DIM.format(arch=self.arch), value)
+
+    def add_mla_nope_enabled(self, value: bool) -> None:
+        self.add_bool(Keys.Attention.MLA_NOPE_ENABLED.format(arch=self.arch), value)
+
+    def add_short_conv_kernel_size(self, value: int) -> None:
+        self.add_uint32(Keys.Attention.SHORT_CONV_KERNEL_SIZE.format(arch=self.arch), value)
+
+    def add_full_attention_layers(self, layers: Sequence[int]) -> None:
+        self.add_array(Keys.Attention.FULL_ATTENTION_LAYERS.format(arch=self.arch), layers)
 
     def add_pooling_type(self, value: PoolingType) -> None:
         self.add_uint32(Keys.LLM.POOLING_TYPE.format(arch=self.arch), value.value)

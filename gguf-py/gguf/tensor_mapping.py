@@ -438,11 +438,13 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.FFN_UP_SHEXP: (
-            "model.layers.{bid}.mlp.shared_expert.up_proj",          # qwen2moe
-            "model.layers.{bid}.mlp.shared_experts.up_proj",         # deepseek deepseek2
-            "model.layers.{bid}.feed_forward.shared_expert.up_proj", # llama4
+            "model.layers.{bid}.mlp.shared_expert.up_proj",                    # qwen2moe
+            "model.layers.{bid}.mlp.shared_experts.up_proj",                   # deepseek deepseek2
+            "model.layers.{bid}.feed_forward.shared_expert.up_proj",           # llama4
             "model.layers.{bid}.feed_forward.down_proj",
-            "model.layers.{bid}.mlp.shared_mlp.up_proj",             # hunyuan
+            "model.layers.{bid}.mlp.shared_mlp.up_proj",                       # hunyuan
+            "model.layers.{bid}.block_sparse_moe.shared_experts.up_proj",      # kimi_linear
+            "model.layers.{bid}.block_sparse_moe.shared_experts.w3",           # kimi_linear (alt)
         ),
 
         MODEL_TENSOR.FFN_UP_CHEXP: (
@@ -485,10 +487,12 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.FFN_GATE_SHEXP: (
-            "model.layers.{bid}.mlp.shared_expert.gate_proj",          # qwen2moe
-            "model.layers.{bid}.mlp.shared_experts.gate_proj",         # deepseek deepseek2
-            "model.layers.{bid}.feed_forward.shared_expert.gate_proj", # llama4
-            "model.layers.{bid}.mlp.shared_mlp.gate_proj",             # hunyuan
+            "model.layers.{bid}.mlp.shared_expert.gate_proj",                    # qwen2moe
+            "model.layers.{bid}.mlp.shared_experts.gate_proj",                   # deepseek deepseek2
+            "model.layers.{bid}.feed_forward.shared_expert.gate_proj",           # llama4
+            "model.layers.{bid}.mlp.shared_mlp.gate_proj",                       # hunyuan
+            "model.layers.{bid}.block_sparse_moe.shared_experts.gate_proj",      # kimi_linear
+            "model.layers.{bid}.block_sparse_moe.shared_experts.w1",             # kimi_linear (alt)
         ),
 
         MODEL_TENSOR.FFN_GATE_CHEXP: (
@@ -545,11 +549,13 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.FFN_DOWN_SHEXP: (
-            "model.layers.{bid}.mlp.shared_expert.down_proj",          # qwen2moe
-            "model.layers.{bid}.mlp.shared_experts.down_proj",         # deepseek deepseek2
-            "model.layers.{bid}.feed_forward.shared_expert.down_proj", # llama4
-            "model.layers.{bid}.shared_mlp.output_linear",             # granitemoe
-            "model.layers.{bid}.mlp.shared_mlp.down_proj",             # hunyuan
+            "model.layers.{bid}.mlp.shared_expert.down_proj",                    # qwen2moe
+            "model.layers.{bid}.mlp.shared_experts.down_proj",                   # deepseek deepseek2
+            "model.layers.{bid}.feed_forward.shared_expert.down_proj",           # llama4
+            "model.layers.{bid}.shared_mlp.output_linear",                       # granitemoe
+            "model.layers.{bid}.mlp.shared_mlp.down_proj",                       # hunyuan
+            "model.layers.{bid}.block_sparse_moe.shared_experts.down_proj",      # kimi_linear
+            "model.layers.{bid}.block_sparse_moe.shared_experts.w2",             # kimi_linear (alt)
         ),
 
         MODEL_TENSOR.FFN_DOWN_CHEXP: (
@@ -584,6 +590,69 @@ class TensorNameMap:
             "model.layers.layers.{bid}.mixer.k",                              # plamo2
             "layers.{bid}.self_attn.k_norm",                                  # qwen3-embedding
             "model.layers.{bid}.attention.key_layernorm",                     # apertus
+        ),
+
+        # Kimi-Linear KDA (Kimi Delta Attention) specific tensors
+        MODEL_TENSOR.ATTN_Q_CONV1D: (
+            "model.layers.{bid}.self_attn.q_conv1d",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_K_CONV1D: (
+            "model.layers.{bid}.self_attn.k_conv1d",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_V_CONV1D: (
+            "model.layers.{bid}.self_attn.v_conv1d",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_A_LOG: (
+            "model.layers.{bid}.self_attn.A_log",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_F_A_PROJ: (
+            "model.layers.{bid}.self_attn.f_a_proj",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_F_B_PROJ: (
+            "model.layers.{bid}.self_attn.f_b_proj",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_DT_BIAS: (
+            "model.layers.{bid}.self_attn.dt_bias",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_B_PROJ: (
+            "model.layers.{bid}.self_attn.b_proj",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_G_A_PROJ: (
+            "model.layers.{bid}.self_attn.g_a_proj",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_G_B_PROJ: (
+            "model.layers.{bid}.self_attn.g_b_proj",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_O_NORM: (
+            "model.layers.{bid}.self_attn.o_norm",  # kimi_linear
+        ),
+
+        # Kimi-Linear MLA (Multi-head Latent Attention) specific tensors
+        MODEL_TENSOR.ATTN_KV_A_PROJ_MQA: (
+            "model.layers.{bid}.self_attn.kv_a_proj_with_mqa",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_KV_A_NORM: (
+            "model.layers.{bid}.self_attn.kv_a_layernorm",  # kimi_linear
+        ),
+
+        MODEL_TENSOR.ATTN_KV_B_PROJ: (
+            "model.layers.{bid}.self_attn.kv_b_proj",  # kimi_linear
+        ),
+
+        # Kimi-Linear MoE specific tensors
+        MODEL_TENSOR.FFN_GATE_INP_BIAS: (
+            "model.layers.{bid}.block_sparse_moe.gate.e_score_correction_bias",  # kimi_linear
         ),
 
         MODEL_TENSOR.ROPE_FREQS: (

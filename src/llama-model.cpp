@@ -91,6 +91,7 @@ const char * llm_type_name(llm_type type) {
         case LLM_TYPE_35B:           return "35B";
         case LLM_TYPE_36B:           return "36B";
         case LLM_TYPE_40B:           return "40B";
+        case LLM_TYPE_48B:           return "48B";
         case LLM_TYPE_65B:           return "65B";
         case LLM_TYPE_70B:           return "70B";
         case LLM_TYPE_120B:          return "120B";
@@ -2177,6 +2178,45 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 switch (hparams.n_layer) {
                     case 26: type = LLM_TYPE_1B; break; // openPangu-Embedded-1B-V1.1
                     case 34: type = LLM_TYPE_7B; break; // openPangu-Embedded-7B-V1.1
+                    default: type = LLM_TYPE_UNKNOWN;
+                }
+            } break;
+        case LLM_ARCH_KIMI_LINEAR:
+            {
+                // MLA head dimension parameters
+                ml.get_key(LLM_KV_ATTENTION_QK_NOPE_HEAD_DIM,    hparams.n_qk_nope_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_QK_ROPE_HEAD_DIM,    hparams.n_qk_rope_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_V_HEAD_DIM,          hparams.n_v_head_dim);
+                ml.get_key(LLM_KV_ATTENTION_MLA_NOPE_ENABLED,    hparams.mla_nope_enabled, false);
+
+                // MLA compression
+                ml.get_key(LLM_KV_ATTENTION_KV_LORA_RANK, hparams.n_lora_kv);
+
+                // KDA short convolution
+                ml.get_key(LLM_KV_ATTENTION_SHORT_CONV_KERNEL_SIZE, hparams.n_shortconv_l_cache);
+
+                // Track which layers use MLA vs KDA
+                std::vector<uint32_t> full_attn_layer_ids;
+                ml.get_arr(LLM_KV_ATTENTION_FULL_ATTENTION_LAYERS, full_attn_layer_ids);
+
+                // Initialize all layers as KDA (false), then mark MLA layers (true)
+                hparams.mla_layer_arr.fill(false);
+                for (uint32_t layer_id : full_attn_layer_ids) {
+                    if (layer_id < hparams.n_layer) {
+                        hparams.mla_layer_arr[layer_id] = true;
+                    }
+                }
+
+                // MoE parameters
+                ml.get_key(LLM_KV_MOE_INTERMEDIATE_SIZE,    hparams.n_moe_intermediate_size, false);
+                ml.get_key(LLM_KV_ROUTED_SCALING_FACTOR,    hparams.f_routed_scaling_factor, false);
+                ml.get_key(LLM_KV_EXPERT_GATING_FUNC,       hparams.expert_gating_func, false);
+
+                // Norm parameters
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+
+                switch (hparams.n_layer) {
+                    case 27: type = LLM_TYPE_48B; break; // Kimi-Linear-48B-A3B-Instruct
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
@@ -6302,6 +6342,117 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
                     }
                 } break;
+            case LLM_ARCH_KIMI_LINEAR:
+                {
+                    // Kimi-Linear head dimensions
+                    const int64_t n_embd_head_qk_rope = hparams.n_qk_rope_head_dim;
+                    const int64_t n_embd_head_qk_nope = hparams.n_qk_nope_head_dim;
+                    const int64_t n_embd_head_v       = hparams.n_v_head_dim;
+                    const int64_t n_embd_head_k_full  = n_embd_head_qk_rope + n_embd_head_qk_nope;
+
+                    const int64_t kv_lora_rank = hparams.n_lora_kv;
+                    const int64_t n_ff_exp     = hparams.n_moe_intermediate_size;
+
+                    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+
+                    // output
+                    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+                    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, 0);
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        auto & layer = layers[i];
+
+                        layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+
+                        // Check if this layer uses MLA (true) or KDA (false)
+                        bool is_mla = hparams.mla_layer_arr[i];
+
+                        if (is_mla) {
+                            // MLA (Multi-head Latent Attention) tensors - similar to DeepSeek2
+                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i),
+                                {n_embd, n_head * n_embd_head_k_full}, 0);
+
+                            layer.wkv_a_mqa = create_tensor(tn(LLM_TENSOR_ATTN_KV_A_PROJ_MQA, "weight", i),
+                                {n_embd, kv_lora_rank + n_embd_head_qk_rope}, 0);
+
+                            layer.attn_kv_a_norm = create_tensor(tn(LLM_TENSOR_ATTN_KV_A_NORM, "weight", i),
+                                {kv_lora_rank}, 0);
+
+                            layer.wkv_b = create_tensor(tn(LLM_TENSOR_ATTN_KV_B_PROJ, "weight", i),
+                                {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)}, 0);
+
+                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i),
+                                {n_head * n_embd_head_v, n_embd}, 0);
+                        } else {
+                            // KDA (Kimi Delta Attention) tensors
+                            // Basic Q/K/V projections
+                            layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q, "weight", i),
+                                {n_embd, n_head * n_embd_head_k_full}, 0);
+                            layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K, "weight", i),
+                                {n_embd, n_head_kv * n_embd_head_k_full}, 0);
+                            layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V, "weight", i),
+                                {n_embd, n_head_kv * n_embd_head_v}, 0);
+                            layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i),
+                                {n_head * n_embd_head_v, n_embd}, 0);
+
+                            // KDA-specific tensors
+                            // Note: Full KDA requires recurrent state management not yet implemented
+                            // Current implementation uses simplified linear attention
+
+                            // Short convolution weights (kernel_size=4, so cache=3)
+                            layer.wq_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_Q_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head * n_embd_head_k_full}, 0);
+                            layer.wk_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_K_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head_kv * n_embd_head_k_full}, 0);
+                            layer.wv_conv1d = create_tensor(tn(LLM_TENSOR_ATTN_V_CONV1D, "weight", i),
+                                {hparams.n_shortconv_l_cache + 1, n_head_kv * n_embd_head_v}, 0);
+
+                            // Delta gating tensors (LoRA-style projections)
+                            const int64_t kda_lora_rank = 256;  // Standard LoRA rank for Kimi
+                            layer.attn_f_a = create_tensor(tn(LLM_TENSOR_ATTN_F_A_PROJ, "weight", i),
+                                {n_embd, kda_lora_rank}, 0);
+                            layer.attn_f_b = create_tensor(tn(LLM_TENSOR_ATTN_F_B_PROJ, "weight", i),
+                                {kda_lora_rank, n_head}, 0);
+                            layer.attn_dt_b = create_tensor(tn(LLM_TENSOR_ATTN_DT_BIAS, "weight", i),
+                                {n_head}, 0);
+
+                            // Output gating tensors
+                            layer.attn_g_a = create_tensor(tn(LLM_TENSOR_ATTN_G_A_PROJ, "weight", i),
+                                {n_embd, kda_lora_rank}, 0);
+                            layer.attn_g_b = create_tensor(tn(LLM_TENSOR_ATTN_G_B_PROJ, "weight", i),
+                                {kda_lora_rank, n_head * n_embd_head_v}, 0);
+
+                            // Output normalization
+                            layer.attn_o_norm = create_tensor(tn(LLM_TENSOR_ATTN_O_NORM, "weight", i),
+                                {n_head * n_embd_head_v}, 0);
+                        }
+
+                        // MoE FFN (all layers use MoE)
+                        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+
+                        layer.ffn_gate_inp = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP, "weight", i),
+                            {n_embd, n_expert}, 0);
+                        layer.ffn_gate_inp_b = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP_BIAS, "weight", i),
+                            {n_expert}, 0);
+
+                        layer.ffn_up_exps = create_tensor(tn(LLM_TENSOR_FFN_UP_EXP, "weight", i),
+                            {n_embd, n_ff_exp, n_expert}, 0);
+                        layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXP, "weight", i),
+                            {n_embd, n_ff_exp, n_expert}, 0);
+                        layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXP, "weight", i),
+                            {n_ff_exp, n_embd, n_expert}, 0);
+
+                        // Shared expert (1 shared expert in Kimi-Linear)
+                        if (hparams.n_expert_shared > 0) {
+                            layer.ffn_up_shexp = create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i),
+                                {n_embd, n_ff_exp}, 0);
+                            layer.ffn_gate_shexp = create_tensor(tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i),
+                                {n_embd, n_ff_exp}, 0);
+                            layer.ffn_down_shexp = create_tensor(tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i),
+                                {n_ff_exp, n_embd}, 0);
+                        }
+                    }
+                } break;
             default:
                 throw std::runtime_error("unknown architecture");
         }
@@ -7126,6 +7277,10 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
             {
                 llm = std::make_unique<llm_build_deepseek2>(*this, params);
             } break;
+        case LLM_ARCH_KIMI_LINEAR:
+            {
+                llm = std::make_unique<llm_build_kimi_linear>(*this, params);
+            } break;
         case LLM_ARCH_CHATGLM:
             {
                 llm = std::make_unique<llm_build_chatglm>(*this, params);
@@ -7459,6 +7614,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_ARCTIC:
         case LLM_ARCH_DEEPSEEK:
         case LLM_ARCH_DEEPSEEK2:
+        case LLM_ARCH_KIMI_LINEAR:
         case LLM_ARCH_PLM:
         case LLM_ARCH_CHATGLM:
         case LLM_ARCH_GLM4:

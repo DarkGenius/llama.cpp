@@ -83,6 +83,7 @@ enum llm_type {
     LLM_TYPE_35B,
     LLM_TYPE_36B,
     LLM_TYPE_40B,
+    LLM_TYPE_48B,
     LLM_TYPE_65B,
     LLM_TYPE_70B,
     LLM_TYPE_120B,
@@ -234,6 +235,17 @@ struct llama_layer {
     struct ggml_tensor * wk_enc    = nullptr;
     struct ggml_tensor * wv_enc    = nullptr;
     struct ggml_tensor * wo_enc    = nullptr;
+
+    // KDA (Kimi Delta Attention) tensors
+    struct ggml_tensor * wq_conv1d    = nullptr;  // Q short convolution
+    struct ggml_tensor * wk_conv1d    = nullptr;  // K short convolution
+    struct ggml_tensor * wv_conv1d    = nullptr;  // V short convolution
+    struct ggml_tensor * attn_f_a     = nullptr;  // Delta gating projection A
+    struct ggml_tensor * attn_f_b     = nullptr;  // Delta gating projection B
+    struct ggml_tensor * attn_dt_b    = nullptr;  // Delta time bias
+    struct ggml_tensor * attn_g_a     = nullptr;  // Output gating projection A
+    struct ggml_tensor * attn_g_b     = nullptr;  // Output gating projection B
+    struct ggml_tensor * attn_o_norm  = nullptr;  // Output normalization
 
     // attention bias
     struct ggml_tensor * bq   = nullptr;
